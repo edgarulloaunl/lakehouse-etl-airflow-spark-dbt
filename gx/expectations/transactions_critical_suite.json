@@ -1,0 +1,41 @@
+{
+  "data_asset_type": "table",
+  "expectation_suite_name": "transactions_critical_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_table_row_count_to_be_between",
+      "meta": {"description": "Debe haber al menos 1 registro", "severity": "CRITICAL"},
+      "kwargs": {"min_value": 1, "strict_max": false}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "meta": {"description": "user_id es requerido", "severity": "CRITICAL"},
+      "kwargs": {"column": "user_id"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "meta": {"description": "transaction_id es clave primaria", "severity": "CRITICAL"},
+      "kwargs": {"column": "transaction_id"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "meta": {"description": "transaction_id debe ser unico", "severity": "CRITICAL"},
+      "kwargs": {"column": "transaction_id"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "meta": {"description": "currency debe ser valido", "severity": "CRITICAL"},
+      "kwargs": {"column": "currency", "value_set": ["USD", "EUR", "GBP"]}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "meta": {"description": "status debe ser valido", "severity": "CRITICAL"},
+      "kwargs": {"column": "status", "value_set": ["COMPLETED", "PENDING", "FAILED"]}
+    }
+  ],
+  "meta": {
+    "great_expectations_version": "0.17.15",
+    "description": "Validaciones CRITICAS que BLOQUEAN el pipeline si fallan",
+    "blocking": true
+  }
+}

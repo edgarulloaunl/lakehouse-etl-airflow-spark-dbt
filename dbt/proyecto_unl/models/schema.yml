@@ -1,0 +1,80 @@
+version: 2
+
+models:
+  - name: stg_raw_transactions
+    description: "Limpieza y estandarizacion de transacciones crudas."
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: user_id
+        description: "Identificador del usuario - DATO PII directo, se recomienda enmascarar o tokenizar en etapas posteriores."
+        tests: [not_null]
+        meta:
+          pii: true
+          pii_category: direct_identifier
+          pii_sensitivity: high
+          access_restrictions: production_only
+          retention_days: 365
+      - name: product_category
+        tests: [not_null]
+      - name: amount
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 0, inclusive: false}
+      - name: currency
+        tests:
+          - accepted_values: {values: ['USD', 'EUR', 'GBP']}
+      - name: status
+        tests:
+          - accepted_values: {values: ['COMPLETED', 'PENDING', 'FAILED']}
+      - name: data_quality_score
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1}
+      - name: data_quality_tier
+        tests:
+          - accepted_values: {values: ['high', 'medium', 'low']}
+      - name: transaction_value_tier
+        tests:
+          - accepted_values: {values: ['high_value', 'medium_value', 'low_value']}
+
+  - name: int_transactions_enriched
+    description: "Enriquecimiento con metricas historicas por usuario y categoria."
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: composite_reliability_score
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1}
+
+  - name: fct_transactions
+    description: "Tabla de hechos final para dashboards."
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: amount
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 0}
+      - name: data_quality_score
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0.7}
+      - name: is_anomaly
+        tests:
+          - accepted_values: {values: [true, false]}
+
+  - name: dim_users
+    description: "Dimension de usuarios con segmentacion RFM."
+    columns:
+      - name: user_id
+        tests: [unique, not_null]
+      - name: lifetime_value
+        tests: [not_null]
+      - name: is_active_user
+        tests:
+          - accepted_values: {values: [true, false]}
+      - name: is_churned_user
+        tests:
+          - accepted_values: {values: [true, false]}
+      - name: rfm_score
+        tests:
+          - dbt_utils.accepted_range: {min_value: 1, max_value: 5}

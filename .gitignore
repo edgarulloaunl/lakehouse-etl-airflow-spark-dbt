@@ -1,7 +1,29 @@
+# Entorno
 .env
+
+# Data Lake
 data_lake/
+
+# Airflow
 logs/
 plugins/
+
+# Python
 __pycache__/
 *.pyc
+
+# PostgreSQL
 postgres_data/
+
+# dbt
+target/
+dbt_packages/
+*.user.yml
+
+# Extras del proyecto
+.qwen/
+dbt_docs/
+
+# OS
+.DS_Store
+Thumbs.db
