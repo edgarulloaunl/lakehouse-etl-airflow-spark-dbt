@@ -1,6 +1,8 @@
+docker compose downversion: '3.8'
+
 x-airflow-common: &airflow-common
-  image: ${AIRFLOW_IMAGE_NAME:-taller_etl_master-airflow:latest}
   build: .
+  image: taller_etl_master-airflow:latest
   env_file: .env
 
   environment: &airflow-common-env
@@ -9,29 +11,34 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
+    AIRFLOW__API__AUTH_BACKEND: airflow.api.auth.backend.basic_auth
 
-    API_KEY: ${API_KEY}
-    API_BASE_URL: ${API_BASE_URL}
-    DB_USER: ${DB_USER}
-    DB_PASS: ${DB_PASS}
-    DB_HOST: ${DB_HOST}
-    DB_NAME: ${DB_NAME}
-    DB_PORT: ${DB_PORT}
-    SALT_PII: ${SALT_PII}
+    # FIX LOGS
+    AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
 
-    AIRFLOW_CONN_POSTGRES_WAREHOUSE_CONN: postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+    # DB Warehouse
+    AIRFLOW_CONN_POSTGRES_WAREHOUSE_CONN: postgresql://${DB_USER}:${DB_PASS}@postgres_warehouse:5432/${DB_NAME}
 
-    GX_NO_USAGE_STATS: 'true'
-
-    # ================================
-    # MINIO (S3 RAW LAYER)
-    # ================================
+    # MinIO (S3)
     AWS_ACCESS_KEY_ID: minio
     AWS_SECRET_ACCESS_KEY: minio123
     S3_ENDPOINT_URL: http://minio:9000
     RAW_BUCKET: raw-zone
 
+    # Variables API
+    API_KEY: ${API_KEY}
+    API_BASE_URL: ${API_BASE_URL}
+
+    # DB vars
+    DB_USER: ${DB_USER}
+    DB_PASS: ${DB_PASS}
+    DB_HOST: postgres_warehouse
+    DB_NAME: ${DB_NAME}
+    DB_PORT: 5432
+
+    SALT_PII: ${SALT_PII}
+
+    GX_NO_USAGE_STATS: 'true'
     DBT_PROFILES_DIR: /opt/airflow/dbt
 
   volumes:
@@ -49,25 +56,7 @@ x-airflow-common: &airflow-common
 
 services:
 
-  # ================================
-  # MINIO (S3 SIMULADO)
-  # ================================
-  minio:
-    image: minio/minio:latest
-    container_name: minio-lakehouse
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio123
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-
-  # ================================
-  # POSTGRES (AIRFLOW METADATA)
-  # ================================
+  # Postgres Airflow Metadata
   postgres:
     image: postgres:13
     environment:
@@ -81,11 +70,10 @@ services:
       interval: 5s
       retries: 5
 
-  # ================================
-  # POSTGRES WAREHOUSE (DBT)
-  # ================================
+  # Postgres Warehouse
   postgres_warehouse:
     image: postgres:13
+    container_name: postgres_warehouse
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
@@ -96,28 +84,44 @@ services:
       - warehouse-db-volume:/var/lib/postgresql/data
       - ./init_db:/docker-entrypoint-initdb.d
 
-  # ================================
-  # AIRFLOW WEBSERVER
-  # ================================
+  # MinIO
+  minio:
+    image: minio/minio:latest
+    container_name: minio-lakehouse
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  # Airflow Init
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+
+  # Webserver
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
       - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
 
-  # ================================
-  # AIRFLOW SCHEDULER
-  # ================================
+  # Scheduler
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
@@ -127,22 +131,6 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # ================================
-  # AIRFLOW INIT
-  # ================================
-  airflow-init:
-    <<: *airflow-common
-    command: version
-    environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_UPGRADE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
-      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
-
-# ================================
-# VOLUMES
-# ================================
 volumes:
   postgres-db-volume:
   warehouse-db-volume:

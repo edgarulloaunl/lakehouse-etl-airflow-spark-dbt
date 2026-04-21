@@ -1,6 +1,30 @@
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.python import BranchPythonOperator
+from airflow.operators.empty import EmptyOperator
 from datetime import datetime
+import subprocess
+
+
+def check_quality():
+    try:
+        result = subprocess.run(
+            ["python", "/opt/airflow/scripts/validate_qualy.py"],
+            capture_output=True,
+            text=True
+        )
+
+        print(result.stdout)
+
+        if result.returncode == 0:
+            return "spark_transform"
+        else:
+            return "quality_failed"
+
+    except Exception as e:
+        print(str(e))
+        return "quality_failed"
+
 
 default_args = {
     "owner": "airflow",
@@ -15,25 +39,25 @@ with DAG(
     catchup=False
 ) as dag:
 
-    # 🔹 1. EXTRACT API → S3
+    # 🔹 1. EXTRACT
     extract = BashOperator(
         task_id="extract_api_to_s3",
         bash_command="python /opt/airflow/scripts/extract_api_to_s3.py"
     )
 
-    # 🔹 2. LOAD S3 → AUDIT
+    # 🔹 2. LOAD
     load = BashOperator(
         task_id="load_s3_to_audit",
         bash_command="python /opt/airflow/scripts/load_s3_to_audit.py"
     )
 
-    # 🔹 3. QUALITY GATE (BLOQUEANTE)
-    validate = BashOperator(
-        task_id="validate_quality",
-        bash_command="python /opt/airflow/scripts/validate_qualy.py"
+    # 🔹 3. BRANCH QUALITY
+    quality_check = BranchPythonOperator(
+        task_id="quality_gate",
+        python_callable=check_quality
     )
 
-    # 🔹 4. SPARK TRANSFORM
+    # 🔹 4A. SI PASA → SPARK
     spark = BashOperator(
         task_id="spark_transform",
         bash_command="""
@@ -43,7 +67,7 @@ with DAG(
         """
     )
 
-    # 🔹 5. DBT MODELS
+    # 🔹 5A. DBT
     dbt_run = BashOperator(
         task_id="dbt_run",
         bash_command="""
@@ -52,5 +76,18 @@ with DAG(
         """
     )
 
-    # 🔗 ORQUESTACIÓN
-    extract >> load >> validate >> spark >> dbt_run
+    # 🔹 4B. SI FALLA → LOG CONTROLADO
+    quality_failed = BashOperator(
+        task_id="quality_failed",
+        bash_command='echo "Quality Gate falló. Pipeline detenido correctamente."'
+    )
+
+    # 🔹 FINES
+    end_success = EmptyOperator(task_id="end_success")
+    end_failed = EmptyOperator(task_id="end_failed")
+
+    # 🔗 FLUJO
+    extract >> load >> quality_check
+
+    quality_check >> spark >> dbt_run >> end_success
+    quality_check >> quality_failed >> end_failed
