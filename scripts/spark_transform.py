@@ -1,56 +1,44 @@
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-
-DB_HOST = os.getenv("DB_HOST")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASS = os.getenv("DB_PASS")
-DB_PORT = os.getenv("DB_PORT")
-
-JDBC_URL = f"jdbc:postgresql://{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
 
 def main():
+
     print("Iniciando Spark...")
 
+    os.environ["PYSPARK_SUBMIT_ARGS"] = \
+        "--packages org.postgresql:postgresql:42.6.0 pyspark-shell"
+
     spark = SparkSession.builder \
-        .appName("ETL Spark Transform") \
-        .config("spark.jars.packages", "org.postgresql:postgresql:42.6.0") \
+        .appName("ETL Transform") \
         .getOrCreate()
 
-    print("Leyendo datos desde audit.raw_transactions...")
+    print("Leyendo datos desde PostgreSQL...")
 
     df = spark.read.format("jdbc") \
-        .option("url", JDBC_URL) \
+        .option("url", "jdbc:postgresql://host.docker.internal:5433/db_warehouse") \
         .option("dbtable", "audit.raw_transactions") \
-        .option("user", DB_USER) \
-        .option("password", DB_PASS) \
+        .option("user", "user_dbt") \
+        .option("password", "password_dbt") \
         .option("driver", "org.postgresql.Driver") \
         .load()
 
-    print(f"Registros originales: {df.count()}")
+    print("Datos cargados")
+    df.show(5)
 
-    # 🔥 LIMPIEZA
-    df_clean = df \
-        .filter(col("amount") >= 0) \
-        .dropna(subset=["transaction_id", "user_id", "amount"]) \
-        .dropDuplicates(["transaction_id"])
+    df_clean = df.filter(df.amount >= 0)
 
-    print(f"Registros limpios: {df_clean.count()}")
-
-    print("Guardando en prod.transactions_clean...")
+    print("Guardando resultados...")
 
     df_clean.write.format("jdbc") \
-        .option("url", JDBC_URL) \
-        .option("dbtable", "prod.transactions_clean") \
-        .option("user", DB_USER) \
-        .option("password", DB_PASS) \
+        .option("url", "jdbc:postgresql://host.docker.internal:5433/db_warehouse") \
+        .option("dbtable", "analytics.cleaned_transactions") \
+        .option("user", "user_dbt") \
+        .option("password", "password_dbt") \
         .option("driver", "org.postgresql.Driver") \
         .mode("overwrite") \
         .save()
 
-    print("Transformación completada")
+    print("Proceso completado")
 
     spark.stop()
 

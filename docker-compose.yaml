@@ -1,4 +1,4 @@
-docker compose downversion: '3.8'
+version: '3.8'
 
 x-airflow-common: &airflow-common
   build: .
@@ -13,28 +13,27 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKEND: airflow.api.auth.backend.basic_auth
 
-    # FIX LOGS
     AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
 
-    # DB Warehouse
-    AIRFLOW_CONN_POSTGRES_WAREHOUSE_CONN: postgresql://${DB_USER}:${DB_PASS}@postgres_warehouse:5432/${DB_NAME}
+    # Conexión al Warehouse (vía host)
+    AIRFLOW_CONN_POSTGRES_WAREHOUSE_CONN: postgresql://${DB_USER}:${DB_PASS}@host.docker.internal:5433/${DB_NAME}
 
-    # MinIO (S3)
+    # MinIO
     AWS_ACCESS_KEY_ID: minio
     AWS_SECRET_ACCESS_KEY: minio123
     S3_ENDPOINT_URL: http://minio:9000
     RAW_BUCKET: raw-zone
 
-    # Variables API
+    # API
     API_KEY: ${API_KEY}
     API_BASE_URL: ${API_BASE_URL}
 
-    # DB vars
+    # DB Vars (para scripts)
     DB_USER: ${DB_USER}
     DB_PASS: ${DB_PASS}
-    DB_HOST: postgres_warehouse
+    DB_HOST: host.docker.internal
     DB_NAME: ${DB_NAME}
-    DB_PORT: 5432
+    DB_PORT: 5433
 
     SALT_PII: ${SALT_PII}
 
@@ -56,7 +55,7 @@ x-airflow-common: &airflow-common
 
 services:
 
-  # Postgres Airflow Metadata
+  # Postgres Airflow (metadata)
   postgres:
     image: postgres:13
     environment:
@@ -70,10 +69,9 @@ services:
       interval: 5s
       retries: 5
 
-  # Postgres Warehouse
+  # Postgres Warehouse (expuesto al host en 5433)
   postgres_warehouse:
     image: postgres:13
-    container_name: postgres_warehouse
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
@@ -87,7 +85,6 @@ services:
   # MinIO
   minio:
     image: minio/minio:latest
-    container_name: minio-lakehouse
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -98,7 +95,7 @@ services:
     volumes:
       - minio_data:/data
 
-  # Airflow Init
+  # Airflow init
   airflow-init:
     <<: *airflow-common
     command: version
@@ -109,7 +106,7 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: airflow
       _AIRFLOW_WWW_USER_PASSWORD: airflow
 
-  # Webserver
+  # Airflow web
   airflow-webserver:
     <<: *airflow-common
     command: webserver
@@ -121,7 +118,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Scheduler
+  # Airflow scheduler
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
